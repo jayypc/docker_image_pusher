@@ -1,1 +1,1 @@
-dataease/sqlbot
+node:24-alpine
