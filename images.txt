@@ -1,2 +1,1 @@
-pgvector/pgvector:pg17
-redis:7-alpine
+nextcloud/all-in-one:latest
