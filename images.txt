@@ -1,1 +1,14 @@
-nextcloud/all-in-one:latest
+paradedb/paradedb:v0.22.2-pg17
+redis:7.0-alpine
+minio/minio:latest
+qdrant/qdrant:v1.16.2
+milvusdb/milvus:v2.6.11
+neo4j:latest
+wechatopenai/weknora-sandbox:latest
+wechatopenai/weknora-docreader:latest
+jaegertracing/all-in-one:latest
+dexidp/dex:latest
+clickhouse/clickhouse-server:24.8
+minio/minio:RELEASE.2025-09-07T16-13-09Z
+langfuse/langfuse-worker:3
+langfuse/langfuse:3
