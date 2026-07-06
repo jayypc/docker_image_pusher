@@ -1,1 +1,1 @@
-mysql:8.4.9
+opensearchproject/opensearch:2.19.6
