@@ -1,1 +1,1 @@
-oceanbase/oceanbase-ce:4.3.5-lts
+pikadb/pika:v3.5.6
