@@ -1,2 +1,1 @@
-postgres:16-alpine
-redis:7-alpine
+ghcr.io/berriai/litellm:v1.100.0
