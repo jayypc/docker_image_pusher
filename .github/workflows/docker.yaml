@@ -11,12 +11,15 @@ env:
   ALIYUN_NAME_SPACE: "${{ secrets.ALIYUN_NAME_SPACE }}"
   ALIYUN_REGISTRY_USER: "${{ secrets.ALIYUN_REGISTRY_USER }}"
   ALIYUN_REGISTRY_PASSWORD: "${{ secrets.ALIYUN_REGISTRY_PASSWORD }}"
+  # 剩余可用空间低于该值时，主动做一次全量清理（单位 KB，此处 4GB）
+  MIN_FREE_KB: "4194304"
 
 jobs:
 
   build:
     name: Pull
     runs-on: ubuntu-latest
+    timeout-minutes: 180
     steps:
     - name: Before freeing up disk space
       run: |
@@ -25,39 +28,35 @@ jobs:
         df -hT
         echo "=============================================================================="
 
-    # 增加可用磁盘空间
-    - name: Maximize build space
-      uses: easimon/maximize-build-space@master
+    # 只做"删除无用预装软件 + 清空预装镜像"，不再用 LVM 合并磁盘。
+    # 旧方案 easimon/maximize-build-space 把根分区剩余压到 2048MB，
+    # 会导致 runner 自己写 /home/runner/actions-runner/_diag/*.log 时磁盘满而失败。
+    - name: Free up disk space
+      uses: jlumbroso/free-disk-space@v1.3.1
       with:
-
-        root-reserve-mb: 2048
-        swap-size-mb: 128
-        remove-dotnet: 'true'
-        remove-haskell: 'true'
-        # 如果空间还是不够用，可以把以下开启，清理出更多空间
-        # remove-android: 'true'
-        # remove-codeql: 'true'
-        build-mount-path: '/var/lib/docker/'
-
-    - name: Restart docker
-      run: sudo service docker restart
+        tool-cache: false
+        android: true
+        dotnet: true
+        haskell: true
+        large-packages: false
+        docker-images: true
+        swap-storage: true
 
     - name: Free up disk space complete
       run: |
         echo "Free up disk space complete"
         echo "=============================================================================="
         df -hT
+        echo "docker root dir: $(docker info -f '{{.DockerRootDir}}' 2>/dev/null)"
         echo "=============================================================================="
 
     - name: Checkout Code
       uses: actions/checkout@v4
 
-    - name: Docker Setup Buildx
-      uses: docker/setup-buildx-action@v3
-
+    # 本流程只做 pull/tag/push，不需要 buildx；建 builder 会额外占一份 buildkit 缓存
     - name: Build and push image Aliyun
       run: |
-        docker login -u $ALIYUN_REGISTRY_USER -p $ALIYUN_REGISTRY_PASSWORD $ALIYUN_REGISTRY
+        docker login -u "$ALIYUN_REGISTRY_USER" -p "$ALIYUN_REGISTRY_PASSWORD" "$ALIYUN_REGISTRY"
         # 数据预处理,判断镜像是否重名
         declare -A duplicate_images
         declare -A temp_map
@@ -67,7 +66,7 @@ jobs:
             if echo "$line" | grep -q '^\s*#'; then
                 continue
             fi
-            
+
             # 获取镜像的完整名称，例如kasmweb/nginx:1.25.3（命名空间/镜像名:版本号）
             image=$(echo "$line" | awk '{print $NF}')
             # 将@sha256:等字符删除
@@ -84,7 +83,7 @@ jobs:
             # 获取镜像名例如nginx
             image_name=$(echo "$image_name_tag" | awk -F':' '{print $1}')
             echo "image_name: $image_name"
-            
+
             # 如果镜像存在于数组中，则添加temp_map
             if [[ -n "${temp_map[$image_name]}" ]]; then
                  # 如果temp_map已经存在镜像名，判断是不是同一命名空间
@@ -95,19 +94,27 @@ jobs:
             else
                 # 存镜像的命名空间
                 temp_map[$image_name]=$name_space
-            fi       
+            fi
         done < images.txt
-        
-        
+
+        failed_images=()
+        ok_count=0
+
         while IFS= read -r line || [ -n "$line" ]; do
             # 忽略空行与注释
             [[ -z "$line" ]] && continue
             if echo "$line" | grep -q '^\s*#'; then
                 continue
             fi
-        
+
             echo "docker pull $line"
-            docker pull $line
+            # 保留 $line 不加引号，兼容 --platform=xxx 这类附加参数
+            if ! docker pull $line; then
+                echo "::error::docker pull 失败，跳过该镜像: $line"
+                failed_images+=("$line")
+                continue
+            fi
+
             platform=$(echo "$line" | awk -F'--platform[ =]' '{if (NF>1) print $2}' | awk '{print $1}')
             echo "platform is $platform"
             # 如果存在架构信息 将架构信息拼到镜像名称前面
@@ -126,7 +133,7 @@ jobs:
             name_space=$(echo "$image" | awk -F'/' '{if (NF==3) print $2; else if (NF==2) print $1; else print ""}')
             # 获取镜像名例  例如nginx
             image_name=$(echo "$image_name_tag" | awk -F':' '{print $1}')
-        
+
             name_space_prefix=""
             # 如果镜像名重名
             if [[ -n "${duplicate_images[$image_name]}" ]]; then
@@ -135,23 +142,41 @@ jobs:
                   name_space_prefix="${name_space}_"
                fi
             fi
-            
+
             # 将@sha256:等字符删除
             image_name_tag="${image_name_tag%%@*}"
             new_image="$ALIYUN_REGISTRY/$ALIYUN_NAME_SPACE/$platform_prefix$name_space_prefix$image_name_tag"
             echo "docker tag $image $new_image"
-            docker tag $image $new_image
+            docker tag "$image" "$new_image"
+
             echo "docker push $new_image"
-            docker push $new_image
+            if docker push "$new_image"; then
+                ok_count=$((ok_count + 1))
+            else
+                echo "::error::docker push 失败: $new_image"
+                failed_images+=("$line")
+            fi
+
+            # 无论 push 成败都要释放空间，用 -f 避免 "image is referenced" 之类的静默失败
             echo "开始清理磁盘空间"
-            echo "=============================================================================="
+            docker rmi -f "$image" >/dev/null 2>&1 || true
+            docker rmi -f "$new_image" >/dev/null 2>&1 || true
+            docker image prune -f >/dev/null 2>&1 || true
+
+            avail_kb=$(df -k --output=avail / | tail -1 | tr -d ' ')
+            echo "剩余可用空间: $((avail_kb / 1024)) MB"
+            if [ "$avail_kb" -lt "$MIN_FREE_KB" ]; then
+                echo "::warning::可用空间不足 $((MIN_FREE_KB / 1024)) MB，执行全量清理"
+                docker system prune -af --volumes || true
+            fi
             df -hT
-            echo "=============================================================================="
-            docker rmi $image
-            docker rmi $new_image
             echo "磁盘空间清理完毕"
             echo "=============================================================================="
-            df -hT
-            echo "=============================================================================="     
-            
         done < images.txt
+
+        echo "成功推送 $ok_count 个镜像"
+        if [ ${#failed_images[@]} -gt 0 ]; then
+            echo "::error::以下镜像处理失败:"
+            printf '  - %s\n' "${failed_images[@]}"
+            exit 1
+        fi
