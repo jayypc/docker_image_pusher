@@ -1,3 +1,11 @@
-calciumion/new-api:latest
-redis:latest
-postgres:15
+busybox:latest
+langgenius/dify-api:1.17.1
+langgenius/dify-web:1.17.1
+postgres:15-alpine
+redis:6-alpine
+langgenius/dify-sandbox:0.2.15
+langgenius/dify-agent-local-sandbox:1.17.1
+langgenius/dify-plugin-daemon:0.6.10-local
+langgenius/dify-agent-backend:1.17.1
+ubuntu/squid:latest
+nginx:latest
