@@ -10,3 +10,15 @@ langgenius/dify-agent-backend:1.17.1
 ubuntu/squid:latest
 nginx:latest
 cr.weaviate.io/semitechnologies/weaviate:1.39.2
+--platform=linux/arm64 busybox:latest
+--platform=linux/arm64 langgenius/dify-api:1.17.1
+--platform=linux/arm64 langgenius/dify-web:1.17.1
+--platform=linux/arm64 postgres:15-alpine
+--platform=linux/arm64 redis:6-alpine
+--platform=linux/arm64 langgenius/dify-sandbox:0.2.15
+--platform=linux/arm64 langgenius/dify-agent-local-sandbox:1.17.1
+--platform=linux/arm64 langgenius/dify-plugin-daemon:0.6.10-local
+--platform=linux/arm64 langgenius/dify-agent-backend:1.17.1
+--platform=linux/arm64 ubuntu/squid:latest
+--platform=linux/arm64 nginx:latest
+--platform=linux/arm64 cr.weaviate.io/semitechnologies/weaviate:1.39.2
