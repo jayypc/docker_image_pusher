@@ -1,1 +1,1 @@
-dockerfile:1.7
+docker/dockerfile:1.7
